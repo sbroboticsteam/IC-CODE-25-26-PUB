@@ -31,6 +31,9 @@ MOTORS = {
 }
 STBY_PINS = [9, 11]
 
+# Game Viewer
+GV_IP = "GameViewer.local:8080"
+
 # ========== IR RECEPTION ==========
 class IRReceiver:
     def __init__(self, gpio_pin, robot):
@@ -119,7 +122,8 @@ class RobotBase():
         for gpio in IR_RX_GPIOS:
             self.ir_receivers.append(IRReceiver(gpio,self.pi))
 
-        
+        r = requests.put(f"http://{GV_IP}/robots",{"team_id":self.team_id})
+
 
     def _send_ir_burst(self, burst_us, pi):
         """Send modulated IR burst"""
@@ -174,7 +178,7 @@ class RobotBase():
         
         # Check for self-hit (for testing)
         if attacking_team == self.team_id:
-            print(f"[LaserTag] SELF HIT DETECTED! Team {attacking_team} hit themselves!")
+            print(f"[IR] SELF HIT DETECTED! Team {attacking_team} hit themselves!")
             # For testing, we'll still register it but mark it as a self-hit
             self.ir_state.update({
                 "is_hit": True,
@@ -184,7 +188,7 @@ class RobotBase():
                 "is_self_hit": True  # Add this flag
             })
         else:
-            print(f"[LaserTag] HIT! Attacked by team {attacking_team}")
+            print(f"[IR] HIT! Attacked by team {attacking_team}")
             self.ir_state.update({
                 "is_hit": True,
                 "hit_by_team": attacking_team,
@@ -192,6 +196,9 @@ class RobotBase():
                 "time_remaining": HIT_DISABLE_TIME,
                 "is_self_hit": False
             })
+
+            hit_data = {"team_attacked":self.team_id, "attacking_team":attacking_team}
+            r = requests.put(f"http://{GV_IP}/robots/attacked",hit_data)
 
     def stop_all_motors(self):
         """Stop all motors"""
@@ -213,6 +220,9 @@ class RobotBase():
         for s in STBY_PINS:
             self.pi.write(s, 1)
         time.sleep(0.01)
+
+    def stream():
+        pass
         
     # Disable robot immediately (even for self-hits in testing)
     # stop_all_motors()

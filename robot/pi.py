@@ -11,6 +11,8 @@ import pigpio
 
 from readonly import RobotBase
 
+OPERATOR_IP = "" # your laptop/pc ip address on IC2026 Network
+
 class Robot(RobotBase):
     def __init__(self, team_id):
         super().__init__(self, team_id)

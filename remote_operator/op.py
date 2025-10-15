@@ -23,8 +23,38 @@ GST_RECEIVER_CMD_AVD = (
     '! rtpjitterbuffer latency=50 ! rtph264depay ! h264parse ! avdec_h264 ! autovideosink sync=false'
 )
 
+SEND_HZ = 30
 
+### Sockets
+
+### Video Stream
+
+### Clean Up
+
+### Input Loop
+
+### Main Loop
 def main():
-    pass
+    ### Open Stream
+
+    pygame.init()
+    screen = pygame.display.set_mode((1280, 720))
+    clock = pygame.time.Clock()
+    running = True
+
+    ### Start Input Thread
+
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                ### Start Cleanup
+
+                running = False
+                pygame.quit()
+            screen.fill("black")
+
+            pygame.display.flip()
+        clock.tick(SEND_HZ)
+        
 if __name__ == "__main__":
     main()

@@ -24,10 +24,10 @@ HIT_DISABLE_TIME = 10.0  # Seconds robot is disabled when hit
 
 # Motor configuration
 MOTORS = {
-    "A": {"EN": 18, "IN1": 23, "IN2": 24, "corner": "FL"},
-    "B": {"EN": 19, "IN1": 25, "IN2": 8, "corner": "FR"},
-    "C": {"EN": 5, "IN1": 22, "IN2": 26, "corner": "RL"},
-    "D": {"EN": 6, "IN1": 16, "IN2": 20, "corner": "RR"},
+    "FL": {"EN": 18, "IN1": 23, "IN2": 24}, # Front Left
+    "FR": {"EN": 19, "IN1": 25, "IN2": 8}, # Front Right
+    "BL": {"EN": 5, "IN1": 22, "IN2": 26}, # Back Left
+    "BR": {"EN": 6, "IN1": 16, "IN2": 20}, # Back Right
 }
 STBY_PINS = [9, 11]
 
@@ -106,7 +106,7 @@ class RobotBase():
         self.pi = pigpio.pi()
         self.team_id = team_id
 
-        if not pigpio.connected():
+        if not self.pi.connected:
             print("ERROR: pigpiod not running. Run: sudo pigpiod", file=sys.stderr)
             sys.exit(1)
 
@@ -120,7 +120,7 @@ class RobotBase():
 
         self.ir_receivers = []
         for gpio in IR_RX_GPIOS:
-            self.ir_receivers.append(IRReceiver(gpio,self.pi))
+            self.ir_receivers.append(IRReceiver(gpio,self))
 
         r = requests.put(f"http://{GV_IP}/robots",{"team_id":self.team_id})
 

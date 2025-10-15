@@ -9,14 +9,8 @@ import time
 import threading
 import pigpio
 import socket
-from readonly import RobotBase
 
-MOTORS = {
-    "FL": {"EN": 18, "IN1": 23, "IN2": 24}, # Front Left
-    "FR": {"EN": 19, "IN1": 25, "IN2": 8}, # Front Right
-    "BL": {"EN": 5, "IN1": 22, "IN2": 26}, # Back Left
-    "BR": {"EN": 6, "IN1": 16, "IN2": 20}, # Back Right
-}
+from readonly import RobotBase, MOTORS
 
 OPERATOR_IP = "192.168.50.200" # your laptop/pc ip address on IC2026 Network
 OPERATOR_PORT = 5600 # the port for video streaming 
@@ -56,10 +50,11 @@ class Robot(RobotBase):
         input_thread.start()
 
     def run(self):
-        pass
-
-        while True:
-            self.tank_drive()
+        try:
+            while True:
+                self.tank_drive()
+        except:
+            self.cleanup()
 
     def stream(self):
         cmd = (
@@ -128,6 +123,19 @@ class Robot(RobotBase):
             pct = max(MIN_DUTY_FLOOR, pct)
             duty = pct * 255 // 100
             self.pi.set_PWM_dutycycle(pins["EN"], duty)
+
+    def cleanup(self):
+        if self.stream_proc and self.stream_proc.poll() is None:
+            try:
+                os.killpg(os.getpgid(self.stream_proc.pid), signal.SIGTERM)
+                self.stream_proc.wait(timeout=2)
+            except:
+                pass
+            print("[Video] Stream stopped")
+        self.stream_proc = None
+
+        for receiver in self.ir_receivers:
+            receiver.cleanup()
 
 if __name__ == "__main__":
     robot = Robot(TEAM_ID)

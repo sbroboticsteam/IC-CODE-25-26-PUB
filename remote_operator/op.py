@@ -9,7 +9,7 @@ import pygame
 import os
 
 # ============ USER CONFIG ============
-PI_IP = ""    # Your Pi's IP on IC2026 network
+PI_IP = "192.168.50.146"    # Your Pi's IP on IC2026 network
 PI_PORT = 5005
 
 AUTO_LAUNCH_GSTREAMER = True
@@ -47,6 +47,7 @@ def clean_up():
 
     sock.close() # stop the socket from running
 
+### Input Loop
 def input_loop():
     ### Keyboard Input
     while True:

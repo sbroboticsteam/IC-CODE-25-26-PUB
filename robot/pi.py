@@ -18,11 +18,11 @@ MOTORS = {
     "BR": {"EN": 6, "IN1": 16, "IN2": 20}, # Back Right
 }
 
-OPERATOR_IP = "" # your laptop/pc ip address on IC2026 Network
+OPERATOR_IP = "192.168.50.200" # your laptop/pc ip address on IC2026 Network
 OPERATOR_PORT = 5600 # the port for video streaming 
 TEAM_ID = -1 # Your team ID
 
-PI_IP = "" # Your pi IP
+PI_IP = "192.168.50.146" # Your pi IP
 PI_PORT = 5005  # 
 
 MIN_DUTY_FLOOR = 30
@@ -32,6 +32,8 @@ PURE_DC_THRESHOLD = 80
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind((PI_IP, PI_PORT))
 
+
+### Input Receiving Loop
 inputQ = []
 def get_input():
     while True:
@@ -45,7 +47,8 @@ def get_input():
 
 class Robot(RobotBase):
     def __init__(self, team_id):
-        super().__init__(self, team_id)
+        super().__init__(team_id)
+        ### Initialization/Start Up
         self.stream_proc = None
 
         ### Socket Receive Thread
@@ -65,11 +68,11 @@ class Robot(RobotBase):
             f"--nopreview -o - | "
             f"gst-launch-1.0 -v fdsrc ! h264parse ! "
             f"rtph264pay config-interval=1 pt=96 ! "
-            f"udpsink host={OPERATOR_IP} port={OPERATOR_IP} sync=false async=false"
+            f"udpsink host={OPERATOR_IP} port={OPERATOR_PORT} sync=false async=false"
         )
     
         self.stream_proc = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid)
-        print(f"[Video] Stream started -> {OPERATOR_IP}:{OPERATOR_IP}")
+        print(f"[Video] Stream started -> {OPERATOR_IP}:{OPERATOR_PORT}")
 
 
     def tank_drive(self):
@@ -130,7 +133,8 @@ if __name__ == "__main__":
     robot = Robot(TEAM_ID)
     robot.stream()
     try:
-        asyncio.run(robot.run())
+        # asyncio.run(robot.run())
+        robot.run()
     except KeyboardInterrupt:
         print("\n[Shutdown] Received interrupt")
     except Exception as e:

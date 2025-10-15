@@ -35,7 +35,7 @@ STBY_PINS = [9, 11]
 GV_IP = "GameViewer.local:8080"
 
 # ========== IR RECEPTION ==========
-class IRReceiver:
+class IRReceiver():
     def __init__(self, gpio_pin, robot):
         self.gpio = gpio_pin
         self.bursts = []
@@ -106,7 +106,7 @@ class RobotBase():
         self.pi = pigpio.pi()
         self.team_id = team_id
 
-        if not pigpio.connected():
+        if not self.pi.connected:
             print("ERROR: pigpiod not running. Run: sudo pigpiod", file=sys.stderr)
             sys.exit(1)
 
@@ -120,9 +120,12 @@ class RobotBase():
 
         self.ir_receivers = []
         for gpio in IR_RX_GPIOS:
-            self.ir_receivers.append(IRReceiver(gpio,self.pi))
+            self.ir_receivers.append(IRReceiver(gpio,self))
 
-        r = requests.put(f"http://{GV_IP}/robots",{"team_id":self.team_id})
+        try:
+            r = requests.put(f"http://{GV_IP}/robots",{"team_id":self.team_id})
+        except:
+            print("FAILED TO CONNECT TO GAME VIEWER")
 
     def _send_ir_burst(self, burst_us, pi):
         """Send modulated IR burst"""
@@ -220,8 +223,9 @@ class RobotBase():
             self.pi.write(s, 1)
         time.sleep(0.01)
 
+    # OVERRIDEABLE
     def stream(self):
-        pass        
-    # Disable robot immediately (even for self-hits in testing)
-    # stop_all_motors()
-    # enter_standby()
+        pass       
+
+    def cleanup(self):
+        pass

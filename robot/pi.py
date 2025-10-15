@@ -46,14 +46,18 @@ class Robot(RobotBase):
         self.stream_proc = None
 
         ### Socket Receive Thread
-        input_thread = threading.Thread(target=get_input, daemon=True)
-        input_thread.start()
+        self.input_thread = threading.Thread(target=get_input, daemon=True)
+        self.input_thread.start()
 
     def run(self):
         try:
             while True:
                 self.tank_drive()
-        except:
+        except KeyboardInterrupt:
+            sys.stderr.write("\n[Shutdown] Keyboard interrupt\n")
+        except Exception as e:
+            sys.stderr.write(f"[Runtime Error] {e}\n")
+        finally:
             self.cleanup()
 
     def stream(self):
@@ -66,7 +70,7 @@ class Robot(RobotBase):
             f"udpsink host={OPERATOR_IP} port={OPERATOR_PORT} sync=false async=false"
         )
     
-        self.stream_proc = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid)
+        self.stream_proc = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(f"[Video] Stream started -> {OPERATOR_IP}:{OPERATOR_PORT}")
 
 

@@ -69,28 +69,28 @@ def input_loop():
         }
 
         # Mecanum Drive
-        vx = 0
-        vy = 0
-        if keyboard.is_pressed("w"):
-            vy = 1
-        elif keyboard.is_pressed("s"):
-            vy = 1
+        # vx = 0
+        # vy = 0
+        # if keyboard.is_pressed("w"):
+        #     vy = 1
+        # elif keyboard.is_pressed("s"):
+        #     vy = 1
 
-        if keyboard.is_pressed("a"):
-            vx += 1
-        if keyboard.is_pressed("d"):
-            vx -= 1
+        # if keyboard.is_pressed("a"):
+        #     vx += 1
+        # if keyboard.is_pressed("d"):
+        #     vx -= 1
 
-        rot = 0
-        if keyboard.is_pressed("right"):
-            rot = 1
-        elif keyboard.is_pressed("left"):
-            rot = -1
-        payload = {
-            "vx": float(vx),
-            "vy": float(vy),
-            "rot": float(rot)
-        }
+        # rot = 0
+        # if keyboard.is_pressed("right"):
+        #     rot = 1
+        # elif keyboard.is_pressed("left"):
+        #     rot = -1
+        # payload = {
+        #     "vx": float(vx),
+        #     "vy": float(vy),
+        #     "rot": float(rot)
+        # }
             
         try:
             sock.sendto(json.dumps(payload).encode("utf-8"), (PI_IP,PI_PORT)) # send our json to our Pi at the appropriate IP an Port

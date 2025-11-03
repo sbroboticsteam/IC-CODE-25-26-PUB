@@ -50,22 +50,29 @@ def clean_up():
 ### Input Loop
 def input_loop():
     ### Keyboard Input
+    
     while True:
         # Tank Drive
         left = 0
         if keyboard.is_pressed("w"):
             left = 1
         elif keyboard.is_pressed("s"):
-            left = 1
+            left = -1
         right = 0
         if keyboard.is_pressed("up"):
             right = 1
         if keyboard.is_pressed("down"):
-            right = 1
+            right = -1
+
+        firing = False
+        if keyboard.is_pressed("space"):
+            firing = True
+            
 
         payload = {
             "Left": float(left),
             "Right": float(right),
+            "Firing":firing
         }
 
         # Mecanum Drive
@@ -111,7 +118,7 @@ def input_loop():
         except Exception as e:
             pass
             # print(f"UDP error: {e}") # catch and report the error
-
+        time.sleep(0.05)
 input_thread = threading.Thread(target=input_loop, daemon=True)
 
 ### Main Loop

@@ -14,7 +14,7 @@ from readonly import RobotBase, MOTORS
 
 OPERATOR_IP = "192.168.50.200" # your laptop/pc ip address on IC2026 Network
 OPERATOR_PORT = 5600 # the port for video streaming 
-TEAM_ID = -1 # Your team ID
+TEAM_ID = 255 # Your team ID
 
 PI_IP = "192.168.50.146" # Your pi IP
 PI_PORT = 5005  # 
@@ -35,7 +35,7 @@ def get_input():
             data, addr = sock.recvfrom(1024)  # buffer size = 1024 bytes
             msg = json.loads(data.decode('utf-8'))
             inputQ.append(msg)
-            print(f"[Received from {addr}] {msg}")
+            # print(f"[Input Received] {msg}")
         except Exception as e:
             print("[Receiver Error]", e)
 
@@ -82,6 +82,9 @@ class Robot(RobotBase):
             self.set_motor("FR", inputJSON["Right"])
             self.set_motor("BR", inputJSON["Right"])
 
+            if (inputJSON["Firing"]):
+                self.fire_ir()
+
     def mecanum_drive(self):
         if len(inputQ) > 0:
             inputJSON = inputQ.pop(0)
@@ -107,7 +110,7 @@ class Robot(RobotBase):
         """
         Set the pwm input of a motor, given its key: FL, FR, BL, BR
         """
-        value = max(min(value,-1), 1)
+        value = max(-1.0, min(1.0, value))
         pins = MOTORS[motor]
         
         if abs(value) < 1e-3:

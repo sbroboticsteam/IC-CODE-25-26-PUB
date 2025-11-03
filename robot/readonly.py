@@ -1,10 +1,11 @@
 import time
 import sys
+import threading
 import requests
 import pigpio
 
-IR_TX_GPIO = 17  # IR transmitter pin
-IR_RX_GPIOS = [4, 27, 12]  # IR receiver pins
+IR_TX_GPIO = 20  # IR transmitter pin
+IR_RX_GPIOS = [3, 25, 21]  # IR receiver pins
 
 CARRIER_FREQ = 38000
 CARRIER_PERIOD_US = int(1_000_000 / CARRIER_FREQ)
@@ -24,24 +25,26 @@ HIT_DISABLE_TIME = 10.0  # Seconds robot is disabled when hit
 
 # Motor configuration
 MOTORS = {
-    "FL": {"EN": 18, "IN1": 23, "IN2": 24}, # Front Left
-    "FR": {"EN": 19, "IN1": 25, "IN2": 8}, # Front Right
-    "BL": {"EN": 5, "IN1": 22, "IN2": 26}, # Back Left
-    "BR": {"EN": 6, "IN1": 16, "IN2": 20}, # Back Right
+    "FL": {"EN": 18, "IN1": 4, "IN2": 17}, # Front Left
+    "FR": {"EN": 23, "IN1": 15, "IN2": 27}, # Front Right
+    "BL": {"EN": 8, "IN1": 16, "IN2": 7}, # Back Left
+    "BR": {"EN": 13, "IN1": 12, "IN2": 6}, # Back Right
 }
-STBY_PINS = [9, 11]
+PWM_FREQ_HZ = 10000
+# STBY_PINS = [9, 11]
+STBY_PINS = [14, 5]
 
 # Game Viewer
 GV_IP = "GameViewer.local:8080"
 
-# ========== IR RECEPTION ==========
+# ========== IR RECEPTION ==================================
 class IRReceiver():
     def __init__(self, gpio_pin, robot):
         self.gpio = gpio_pin
         self.bursts = []
         self.last_tick = 0
         self.last_burst_time = 0
-        self.last_fire_time = 0
+        self.robot = robot
         self.pi = robot.pi
 
         self.pi.set_mode(self.gpio, pigpio.INPUT)
@@ -101,6 +104,19 @@ class IRReceiver():
     def cleanup(self):
         self.cb.cancel()
 
+# ========== Robot/IR Control Threads ==========================
+
+def begin_hitstun_timer(robot): # Updates the time remaining for hitstun
+    print("[Game] Waiting to respawn")
+    while robot.ir_state["time_remaining"] > 0:
+        print(f"    {robot.ir_state["time_remaining"]}s...")
+        robot.ir_state["time_remaining"] -= 1
+        time.sleep(1)
+    print("[Game] Respawned!")
+    robot.exit_standby()
+    robot.ir_state.update({"is_hit" : False})
+
+# ========== ROBOT BASE CLASS - Inherit From Here! ==========
 class RobotBase():
     def __init__(self, team_id):
         self.pi = pigpio.pi()
@@ -110,6 +126,7 @@ class RobotBase():
             print("ERROR: pigpiod not running. Run: sudo pigpiod", file=sys.stderr)
             sys.exit(1)
 
+        self.init_io()
         self.ir_state = {
             "is_hit": False,
             "hit_by_team": 0,
@@ -118,6 +135,7 @@ class RobotBase():
             "is_self_hit": False,  # Added for self-hit detection
         }
 
+        self.last_fire_time = 0
         self.ir_receivers = []
         for gpio in IR_RX_GPIOS:
             self.ir_receivers.append(IRReceiver(gpio,self))
@@ -127,22 +145,22 @@ class RobotBase():
         except:
             print("FAILED TO CONNECT TO GAME VIEWER")
 
-    def _send_ir_burst(self, burst_us, pi):
+    def _send_ir_burst(self, burst_us):
         """Send modulated IR burst"""
-        pi.wave_clear()
+        self.pi.wave_clear()
         cycle = [
             pigpio.pulse(1 << IR_TX_GPIO, 0, PULSE_ON_US),
             pigpio.pulse(0, 1 << IR_TX_GPIO, PULSE_OFF_US)
         ]
-        pi.wave_add_generic(cycle)
-        wid = pi.wave_create()
+        self.pi.wave_add_generic(cycle)
+        wid = self.pi.wave_create()
         cycles = burst_us // CARRIER_PERIOD_US
-        pi.wave_chain([255, 0, wid, 255, 1, cycles & 255, (cycles >> 8) & 255])
-        while pi.wave_tx_busy():
+        self.pi.wave_chain([255, 0, wid, 255, 1, cycles & 255, (cycles >> 8) & 255])
+        while self.pi.wave_tx_busy():
             time.sleep(0.0001)
-        pi.wave_delete(wid)
+        self.pi.wave_delete(wid)
 
-    def _send_ir_bit(self,bit):
+    def _send_ir_bit(self, bit):
         """Send IR bit"""
         if bit == 1:
             self._send_ir_burst(BIT_1_BURST)
@@ -150,7 +168,7 @@ class RobotBase():
             self._send_ir_burst(BIT_0_BURST)
         time.sleep(0.0008)
 
-    def fire_ir(self, team_id):
+    def fire_ir(self):
         """Send team ID via IR"""
         if self.ir_state["is_hit"]:
             return  # Can't fire when hit
@@ -158,7 +176,7 @@ class RobotBase():
         if current_time - self.last_fire_time < FIRE_COOLDOWN:
             return # Can't fire during cooldown
         
-        print(f"[IR] Firing! Team {team_id}")
+        print(f"[IR] Firing! Team {self.team_id}")
         
         # Start bit
         self._send_ir_burst(START_END_BURST)
@@ -166,7 +184,7 @@ class RobotBase():
         
         # Send 8-bit team ID
         for i in range(8):
-            self._send_ir_bit((team_id >> (7 - i)) & 1)
+            self._send_ir_bit((self.team_id >> (7 - i)) & 1)
         
         # End burst
         self._send_ir_burst(START_END_BURST)
@@ -201,6 +219,27 @@ class RobotBase():
 
             hit_data = {"team_attacked":self.team_id, "attacking_team":attacking_team}
             r = requests.put(f"http://{GV_IP}/robots/attacked",hit_data)
+
+        self.stop_all_motors()
+        self.enter_standby()
+        threading.Thread(target = begin_hitstun_timer, args=(self,)).start()
+
+    def init_io(self):
+        #init standby
+        for s in STBY_PINS:
+            self.pi.set_mode(s, pigpio.OUTPUT)
+            self.pi.write(s, 1)
+
+        #init motors
+        for m in MOTORS.values():
+            self.pi.set_mode(m["EN"], pigpio.OUTPUT)
+            self.pi.set_PWM_frequency(m["EN"], PWM_FREQ_HZ)
+            self.pi.write(m["EN"], 0)
+            
+            self.pi.set_mode(m["IN1"], pigpio.OUTPUT)
+            self.pi.write(m["IN1"], 0)
+            self.pi.set_mode(m["IN2"], pigpio.OUTPUT)
+            self.pi.write(m["IN2"], 0)
 
     def stop_all_motors(self):
         """Stop all motors"""

@@ -11,48 +11,48 @@ import pigpio
 import socket
 
 from readonly import RobotBase, MOTORS
-
-OPERATOR_IP = "192.168.50.200" # your laptop/pc ip address on IC2026 Network
-OPERATOR_PORT = 5600 # the port for video streaming 
-TEAM_ID = 255 # Your team ID
-
-PI_IP = "192.168.50.146" # Your pi IP
-PI_PORT = 5005  # 
+# Motor information
+motor_map = {
+    "FR":"MOTOR 1",
+    "FL":"MOTOR 2",
+    "BR":"MOTOR 3",
+    "BL":"MOTOR 4"
+}
 
 MIN_DUTY_FLOOR = 30
 PURE_DC_THRESHOLD = 80
-
-### Bind Socket
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.bind((PI_IP, PI_PORT))
-
-
-### Input Receiving Loop
-inputQ = []
-def get_input():
-    while True:
-        try:
-            data, addr = sock.recvfrom(1024)  # buffer size = 1024 bytes
-            msg = json.loads(data.decode('utf-8'))
-            inputQ.append(msg)
-            # print(f"[Input Received] {msg}")
-        except Exception as e:
-            print("[Receiver Error]", e)
+PWM_FREQ_HZ = 10000
 
 class Robot(RobotBase):
-    def __init__(self, team_id):
-        super().__init__(team_id)
+    def __init__(self, config):
+        super().__init__(config)
         ### Initialization/Start Up
-        self.stream_proc = None
+        self.init_motors()
+
+        ### Bind Socket
+        self.input_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.input_sock.bind((self.robot_ip, self.robot_port))
+        self.inputQ = []
 
         ### Socket Receive Thread
-        self.input_thread = threading.Thread(target=get_input, daemon=True)
+        self.input_thread = threading.Thread(target=self.get_input, daemon=True)
         self.input_thread.start()
+    
+    ### Input Receiving Loop
+    def get_input(self):
+        while True:
+            try:
+                data, addr = self.input_sock.recvfrom(1024)  # buffer size = 1024 bytes
+                msg = json.loads(data.decode('utf-8'))
+                self.inputQ.append(msg)
+            except Exception as e:
+                print("[Receiver Error]", e)
 
     def run(self):
         try:
             while True:
-                self.tank_drive()
+                # self.tank_drive()
+                self.mecanum_drive()
         except KeyboardInterrupt:
             sys.stderr.write("\n[Shutdown] Keyboard interrupt\n")
         except Exception as e:
@@ -60,55 +60,56 @@ class Robot(RobotBase):
         finally:
             self.cleanup()
 
-    def stream(self):
-        cmd = (
-            f"rpicam-vid -t 0 --width 1280 --height 720 --framerate 30 "
-            f"--codec h264 --bitrate 4000000 --profile baseline --intra 30 --inline "
-            f"--nopreview -o - | "
-            f"gst-launch-1.0 -v fdsrc ! h264parse ! "
-            f"rtph264pay config-interval=1 pt=96 ! "
-            f"udpsink host={OPERATOR_IP} port={OPERATOR_PORT} sync=false async=false"
-        )
-    
-        self.stream_proc = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print(f"[Video] Stream started -> {OPERATOR_IP}:{OPERATOR_PORT}")
-
+    def init_motors(self):
+        for m in MOTORS.values():
+            self.pi.set_mode(m["EN"], pigpio.OUTPUT)
+            self.pi.set_PWM_frequency(m["EN"], PWM_FREQ_HZ)
+            self.pi.write(m["EN"], 0)
+            
+            self.pi.set_mode(m["IN1"], pigpio.OUTPUT)
+            self.pi.write(m["IN1"], 0)
+            self.pi.set_mode(m["IN2"], pigpio.OUTPUT)
+            self.pi.write(m["IN2"], 0)
 
     def tank_drive(self):
-        if len(inputQ) > 0:
-            inputJSON = inputQ.pop(0)
-            self.set_motor("FL", inputJSON["Left"])
-            self.set_motor("BL", inputJSON["Left"])
-            self.set_motor("FR", inputJSON["Right"])
-            self.set_motor("BR", inputJSON["Right"])
+        if len(self.inputQ) > 0:
+            inputJSON = self.inputQ.pop(0)
+            # invert left side
+            self.set_motor(motor_map["FL"], inputJSON["Left"])
+            self.set_motor(motor_map["BL"], inputJSON["Left"])
+            self.set_motor(motor_map["FR"], -inputJSON["Right"])
+            self.set_motor(motor_map["BR"], -inputJSON["Right"])
 
             if (inputJSON["Firing"]):
                 self.fire_ir()
 
     def mecanum_drive(self):
-        if len(inputQ) > 0:
-            inputJSON = inputQ.pop(0)
+        if len(self.inputQ) > 0:
+            inputJSON = self.inputQ.pop(0)
             vx = inputJSON["vx"]
             vy = inputJSON["vy"]
             rot = inputJSON["rot"]
 
             fl = vy + vx + rot
-            fr = -vy + vx - rot
-            bl = -vy + vx + rot
+            # fr = -vy + vx - rot
+            fr = vy - vx - rot
+            # bl = -vy + vx + rot
+            bl = vy - vx + rot
             br = vy + vx - rot
             
             scale = max(1.0, abs(fl), abs(fr), abs(bl), abs(br))
-            fl /= scale; fr /= scale; rl /= scale; rr /= scale # normalize each speed
+            fl /= scale; fr /= scale; bl /= scale; br /= scale # normalize each speed
 
-            self.set_motor("FL", fl)
-            self.set_motor("BL", bl)
-            self.set_motor("FR", fr)
-            self.set_motor("BR", br)
+            # invert a side
+            self.set_motor(motor_map["FL"], fl)
+            self.set_motor(motor_map["BL"], bl)
+            self.set_motor(motor_map["FR"], -fr)
+            self.set_motor(motor_map["BR"], -br)
 
     # Set PWM Value to Motor
     def set_motor(self, motor, value):  
         """
-        Set the pwm input of a motor, given its key: FL, FR, BL, BR
+        Set the pwm input of a motor, given its key: "MOTOR 1", "MOTOR 2", "MOTOR 3","MOTOR 4"
         """
         value = max(-1.0, min(1.0, value))
         pins = MOTORS[motor]
@@ -132,23 +133,29 @@ class Robot(RobotBase):
             self.pi.set_PWM_dutycycle(pins["EN"], duty)
 
     def cleanup(self):
-        if self.stream_proc and self.stream_proc.poll() is None:
-            try:
-                os.killpg(os.getpgid(self.stream_proc.pid), signal.SIGTERM)
-                self.stream_proc.wait(timeout=2)
-            except:
-                pass
-            print("[Video] Stream stopped")
-        self.stream_proc = None
+        # end camera stream
+        self.cleanup_stream()
 
+        #ir clean up
         for receiver in self.ir_receivers:
             receiver.cleanup()
 
+        self.input_sock.close()
+
 if __name__ == "__main__":
-    robot = Robot(TEAM_ID)
-    robot.stream()
+    config = None
     try:
-        # asyncio.run(robot.run())
+        with open("../config.json") as file:
+            config = json.load(file)
+    except FileNotFoundError:
+        print(f"Config File not found in parent directory!")
+    except json.JSONDecodeError:
+        print(f"Failed to decode config file!")
+
+    robot = Robot(config)
+    robot.stream()
+
+    try:
         robot.run()
     except KeyboardInterrupt:
         print("\n[Shutdown] Received interrupt")

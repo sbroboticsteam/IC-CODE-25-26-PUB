@@ -9,8 +9,8 @@ import pygame
 import os
 
 # ============ USER CONFIG ============
-PI_IP = "192.168.50.146"    # Your Pi's IP on IC2026 network
-PI_PORT = 5005
+PI_IP = "192.168.50.163"    # Your Pi's IP on IC2026 network
+PI_PORT = 5100
 
 AUTO_LAUNCH_GSTREAMER = True
 GST_RECEIVER_CMD = (
@@ -33,12 +33,11 @@ gst_proc = None # define a subprocess globally
 def open_stream():
     global gst_proc
 
-    if AUTO_LAUNCH_GSTREAMER:
-        try:
-            gst_proc = subprocess.Popen(GST_RECEIVER_CMD, shell=True) # run the command we wrote in the shell
-            print("[Video] GStreamer started")
-        except Exception as e:
-            print(f"[Video] Failed: {e}")
+    try:
+        gst_proc = subprocess.Popen(GST_RECEIVER_CMD, shell=True) # run the command we wrote in the shell
+        print("[Video] GStreamer started")
+    except Exception as e:
+        print(f"[Video] Failed: {e}")
 
 ### Clean Up
 def clean_up():
@@ -53,51 +52,58 @@ def input_loop():
     
     while True:
         # Tank Drive
-        left = 0
+        # left = 0
+        # if keyboard.is_pressed("w"):
+        #     left = 1
+        # elif keyboard.is_pressed("s"):
+        #     left = -1
+        # right = 0
+        # if keyboard.is_pressed("up"):
+        #     right = 1
+        # if keyboard.is_pressed("down"):
+        #     right = -1
+
+        # firing = False
+        # if keyboard.is_pressed("space"):
+        #     firing = True
+            
+
+        # payload = {
+        #     "Left": float(left),
+        #     "Right": float(right),
+        #     "Firing":firing
+        # }
+
+        # Mecanum Drive
+        vx = 0
+        vy = 0
         if keyboard.is_pressed("w"):
-            left = 1
+            vy += 1
         elif keyboard.is_pressed("s"):
-            left = -1
-        right = 0
-        if keyboard.is_pressed("up"):
-            right = 1
-        if keyboard.is_pressed("down"):
-            right = -1
+            vy += -1
+
+        if keyboard.is_pressed("a"):
+            vx += 1
+        if keyboard.is_pressed("d"):
+            vx -= 1
+
+        rot = 0
+        if keyboard.is_pressed("right"):
+            rot += 1
+        elif keyboard.is_pressed("left"):
+            rot += -1
+        
 
         firing = False
         if keyboard.is_pressed("space"):
             firing = True
-            
 
         payload = {
-            "Left": float(left),
-            "Right": float(right),
-            "Firing":firing
+            "vx": float(vx),
+            "vy": float(vy),
+            "rot": float(rot),
+            "firing": firing
         }
-
-        # Mecanum Drive
-        # vx = 0
-        # vy = 0
-        # if keyboard.is_pressed("w"):
-        #     vy = 1
-        # elif keyboard.is_pressed("s"):
-        #     vy = 1
-
-        # if keyboard.is_pressed("a"):
-        #     vx += 1
-        # if keyboard.is_pressed("d"):
-        #     vx -= 1
-
-        # rot = 0
-        # if keyboard.is_pressed("right"):
-        #     rot = 1
-        # elif keyboard.is_pressed("left"):
-        #     rot = -1
-        # payload = {
-        #     "vx": float(vx),
-        #     "vy": float(vy),
-        #     "rot": float(rot)
-        # }
             
         try:
             sock.sendto(json.dumps(payload).encode("utf-8"), (PI_IP,PI_PORT)) # send our json to our Pi at the appropriate IP an Port
@@ -123,7 +129,8 @@ input_thread = threading.Thread(target=input_loop, daemon=True)
 
 ### Main Loop
 def main():
-    open_stream()
+    if AUTO_LAUNCH_GSTREAMER:
+        open_stream()
 
     pygame.init()
     screen = pygame.display.set_mode((1280, 720))

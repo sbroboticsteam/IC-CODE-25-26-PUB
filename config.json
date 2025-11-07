@@ -1,0 +1,13 @@
+{
+    "team_id":254,
+    "team_name":"Kharamt",
+    "robot_ip":"192.168.50.163",
+    "robot_port":5100,
+    "operator_ip":"192.168.50.200",
+    "operator_input_port":5200,
+    "operator_video_port":5600,
+
+    "gv_ip":"192.168.50.67",
+    "gv_comm_port":6000,
+    "gv_video_port":5000
+}

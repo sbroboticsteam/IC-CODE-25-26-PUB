@@ -141,6 +141,8 @@ class RobotBase():
         self.operator_input_port = config["operator_input_port"]
         self.operator_video_port = config["operator_video_port"]
 
+        self.game_start_time = time.time()
+
         if not self.pi.connected:
             print("ERROR: pigpiod not running. Run: sudo pigpiod", file=sys.stderr)
             sys.exit(1)
@@ -160,16 +162,7 @@ class RobotBase():
             "time_remaining": 0,
             "is_self_hit": False,  # Added for self-hit detection
         }
-
-        # Game State
-        self.game_state = {
-            "connected" : False,
-            "game_active" : False,
-            "is_ready" : False,
-            "points" : 0,
-            "deaths" : 0,
-            "kills" : 0
-        }
+        
         self.init_gv()
 
         # GV Listener Thread
@@ -177,6 +170,7 @@ class RobotBase():
         self.listener_thread.start()
 
         # Heartbeat Thread
+        print("[Heartbeat] Heartbeat thread started")
         self.heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
         self.heartbeat_thread.start()
 
@@ -209,7 +203,57 @@ class RobotBase():
             print(f"[GameClient] Failed to bind to port {self.listen_port}: {e}")
             return False
         
-        self.send_registration()
+        # # --- Discovery responder: listen for DISCOVER messages on UDP 5500 ---
+        try:
+            self._discovery_port = 6500
+            self._discovery_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self._discovery_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            # bind to all interfaces so controllers can discover via IP
+            self._discovery_sock.bind(('0.0.0.0', self._discovery_port))
+            self._discovery_loop()
+            # self._discovery_thread = threading.Thread(target=self._discovery_loop, daemon=True)
+            # self._discovery_thread.start()
+            print(f"[Discovery] Listening for discovery packets on port {self._discovery_port}")
+        except Exception as e:
+            print(f"[Discovery] Failed to start discovery responder: {e}")
+            self._discovery_sock = None
+
+    def _discovery_loop(self):
+        """Simple UDP discovery responder. Replies with a JSON DISCOVER_ACK containing robot info."""
+        if not hasattr(self, '_discovery_sock') or not self._discovery_sock:
+            return
+
+        sock = self._discovery_sock
+        while True:
+            try:
+                data, addr = sock.recvfrom(4096)
+                try:
+                    msg = json.loads(data.decode('utf-8'))
+                except Exception:
+                    # ignore invalid payloads
+                    continue
+
+                if msg.get('type') == 'DISCOVER':
+                    resp = {
+                        'type': 'DISCOVER_ACK',
+                        'team_id': self.team_id,
+                        'team_name': self.team_name,
+                        'robot_name': self.robot_name,
+                        'robot_ip': self.robot_ip,
+                        'robot_port': self.robot_port,
+                        'timestamp': time.time()
+                    }
+                    try:
+                        sock.sendto(json.dumps(resp).encode('utf-8'), addr)
+                        print(f"[Discovery] Sent DISCOVER_ACK to {addr}")
+                        break
+                    except Exception as e:
+                        print(f"[Discovery] Failed to send ACK to {addr}: {e}")
+                        break
+            except Exception as e:
+                # Avoid tight-spin on persistent errors
+                print(f"[Discovery] Loop error: {e}")
+                time.sleep(0.1)
 
     # ------- IR logic -------
 
@@ -269,13 +313,16 @@ class RobotBase():
         if attacking_team == self.team_id:
             print(f"[IR] SELF HIT DETECTED! Team {attacking_team} hit themselves!")
             # For testing, we'll still register it but mark it as a self-hit
-            self.ir_state.update({
-                "is_hit": True,
-                "hit_by_team": attacking_team,
-                "hit_time": time.time(),
-                "time_remaining": HIT_DISABLE_TIME,
-                "is_self_hit": True  # Add this flag
-            })
+            # self.ir_state.update({
+            #     "is_hit": True,
+            #     "hit_by_team": attacking_team,
+            #     "hit_time": time.time(),
+            #     "time_remaining": HIT_DISABLE_TIME,
+            #     "is_self_hit": True  # Add this flag
+            # })
+            # threading.Thread(target = begin_hitstun_timer, args=(self,)).start()
+
+            # return
         else:
             print(f"[IR] HIT! Attacked by team {attacking_team}")
             self.ir_state.update({
@@ -286,21 +333,21 @@ class RobotBase():
                 "is_self_hit": False
             })
 
-        # send data to GV
-        # Log the hit
-        hit_record = {
-            "timestamp": datetime.now().isoformat(),
-            "game_time": current_time - self.game_start_time if self.game_start_time else 0,
-            "attacking_team": attacking_team,
-            "defending_team": self.team_id
-        }
+            # send data to GV
+            # Log the hit
+            hit_record = {
+                "timestamp": datetime.now().isoformat(),
+                "game_time": current_time - self.game_start_time if self.game_start_time else 0,
+                "attacking_team": attacking_team,
+                "defending_team": self.team_id
+            }
 
-        # Send hit notification to Game Viewer
-        self.send_hit_report(hit_record)        
+            # Send hit notification to Game Viewer
+            self.send_hit_report(hit_record)        
 
-        self.stop_all_motors()
-        self.enter_standby()
-        threading.Thread(target = begin_hitstun_timer, args=(self,)).start()
+            self.stop_all_motors()
+            self.enter_standby()
+            threading.Thread(target = begin_hitstun_timer, args=(self,)).start()
 
     def stop_all_motors(self):
         """Stop all motors"""
@@ -336,23 +383,13 @@ class RobotBase():
         message = {
             "type": "HEARTBEAT",
             "team_id": self.team_id,
-            "game_active": self.game_state["game_active"],
-            "points": self.game_state["points"],
+            # "game_active": self.game_state["game_active"],
+            "game_active": False,
+            # "points": self.game_state["points"],
+            "points": 0,
             "timestamp": time.time()
         }
         self._send_to_gv(message)
-
-    def send_registration(self):
-        """Register with Game Viewer"""
-        message = {
-            "type": "REGISTER",
-            "team_id": self.team_id,
-            "team_name": self.team_name if self.team_name else "null",
-            "robot_name": self.robot_name if self.robot_name else "null",
-            "timestamp": time.time()
-        }
-        self._send_to_gv(message)
-        print(f"[GameClient] Sent registration")
 
     def send_hit_report(self, hit_data):
         """Send hit report to Game Viewer"""
@@ -389,50 +426,52 @@ class RobotBase():
             except Exception as e:
                 print(f"[GameClient] Listen error: {e}")
 
-    def _handle_message(self, message):
-        """Handle incoming message from Game Viewer"""
-        msg_type = message.get('type')
+    # def _handle_message(self, message):
+    #     """Handle incoming message from Game Viewer"""
+    #     msg_type = message.get('type')
         
-        if msg_type == 'READY_CHECK':
-            print("[GameClient] Ready check received")
-            # robots stop moving when they are confirmed to be ready
-            # self.stop_all_motors()
-            # self.enter_standby()
+    #     if msg_type == 'READY_CHECK':
+    #         print("[GameClient] Ready check received")
+    #         # robots stop moving when they are confirmed to be ready
+    #         self.stop_all_motors()
+    #         self.enter_standby()
         
-        elif msg_type == 'GAME_START':
-            print("[GameClient] GAME START!")
-            self.game_state["game_active"] = True
+    #     elif msg_type == 'GAME_START':
+    #         print("[GameClient] GAME START!")
+    #         self.game_state["game_active"] = True
+    #         self.exit_standby()
 
         
-        elif msg_type == 'GAME_END':
-            print("[GameClient] GAME END!")
-            self.game_state["game_active"] = False
-            self.stop_all_motors()
-            self.enter_standby()
+    #     elif msg_type == 'GAME_END':
+    #         print("[GameClient] GAME END!")
+    #         self.game_state["game_active"] = False
+    #         self.stop_all_motors()
+    #         self.enter_standby()
 
         
-        elif msg_type == 'POINTS_UPDATE':
-            new_points = message.get('points', 0)
-            kills = message.get('kills', 0)
-            deaths = message.get('deaths', 0)
+    #     elif msg_type == 'POINTS_UPDATE':
+    #         new_points = message.get('points', 0)
+    #         kills = message.get('kills', 0)
+    #         deaths = message.get('deaths', 0)
             
-            self.points = new_points
-            self.kills = kills
-            self.deaths = deaths
+    #         self.points = new_points
+    #         self.kills = kills
+    #         self.deaths = deaths
             
-            print(f"[GameClient] Points update: {new_points} (K:{kills} D:{deaths})")
+    #         print(f"[GameClient] Points update: {new_points} (K:{kills} D:{deaths})")
             
-            if self.on_points_update:
-                self.on_points_update(new_points)
+    #         if self.on_points_update:
+    #             self.on_points_update(new_points)
         
-        elif msg_type == 'PING':
-            # Respond to ping
-            response = {
-                "type": "PONG",
-                "team_id": self.team_id,
-                "timestamp": time.time()
-            }
-            self._send_to_gv(response)
+    #     elif msg_type == 'PING':
+    #         # Respond to ping
+    #         response = {
+    #             "type": "PONG",
+    #             "team_id": self.team_id,
+    #             "timestamp": time.time()
+    #         }
+    #         self._send_to_gv(response)
+
 
     def stream(self):
         """Start camera stream to both laptop and game viewer"""

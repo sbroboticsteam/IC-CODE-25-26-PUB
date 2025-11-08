@@ -8,9 +8,21 @@ import keyboard
 import pygame
 import os
 
+from client_readonly import GVClient
+
 # ============ USER CONFIG ============
-PI_IP = "192.168.50.163"    # Your Pi's IP on IC2026 network
-PI_PORT = 5100
+config = None
+with open("./config.json", 'r') as f:
+    config = json.load(f)
+
+
+PI_IP = config.get("robot_ip")
+PI_PORT = config.get("robot_port")
+
+GV_IP = config.get("gv_ip", "192.168.50.67")
+GV_PORT = config.get("gv_comm_port")
+OPERATOR_IP = config.get("operator_ip")
+OPERATOR_INPUT_PORT = config.get("operator_input_port")
 
 AUTO_LAUNCH_GSTREAMER = True
 GST_RECEIVER_CMD = (
@@ -23,6 +35,11 @@ GST_RECEIVER_CMD_AVD = (
 )
 
 SEND_HZ = 30 
+
+gvcli = GVClient(config)
+if not (gvcli.discover_robot()):
+    quit()
+gvcli.send_registration(6100)
 
 ### Sockets
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # create a datagram socket 
@@ -48,6 +65,10 @@ def clean_up():
 
 ### Input Loop
 def input_loop():
+    ## Do not send inputs if you are ready    
+    if gvcli.game_state["is_ready"]:
+        if not gvcli.game_state["game_active"]:
+            return 
     ### Keyboard Input
     
     while True:
@@ -79,18 +100,18 @@ def input_loop():
         vy = 0
         if keyboard.is_pressed("w"):
             vy += 1
-        elif keyboard.is_pressed("s"):
+        if keyboard.is_pressed("s"):
             vy += -1
 
         if keyboard.is_pressed("a"):
-            vx += 1
+            vx += -1
         if keyboard.is_pressed("d"):
-            vx -= 1
+            vx += 1
 
         rot = 0
         if keyboard.is_pressed("right"):
             rot += 1
-        elif keyboard.is_pressed("left"):
+        if keyboard.is_pressed("left"):
             rot += -1
         
 
@@ -102,7 +123,7 @@ def input_loop():
             "vx": float(vx),
             "vy": float(vy),
             "rot": float(rot),
-            "firing": firing
+            "Firing": firing
         }
             
         try:

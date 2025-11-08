@@ -51,8 +51,15 @@ class Robot(RobotBase):
     def run(self):
         try:
             while True:
-                # self.tank_drive()
-                self.mecanum_drive()
+                ### Interpret Inputs
+                if len(self.inputQ) > 0:
+                    inputJSON = self.inputQ.pop(0)
+
+                    # self.tank_drive(inputJSON)
+                    self.mecanum_drive(inputJSON)
+
+                    if (inputJSON["Firing"]):
+                        self.fire_ir()
         except KeyboardInterrupt:
             sys.stderr.write("\n[Shutdown] Keyboard interrupt\n")
         except Exception as e:
@@ -71,40 +78,32 @@ class Robot(RobotBase):
             self.pi.set_mode(m["IN2"], pigpio.OUTPUT)
             self.pi.write(m["IN2"], 0)
 
-    def tank_drive(self):
-        if len(self.inputQ) > 0:
-            inputJSON = self.inputQ.pop(0)
-            # invert left side
-            self.set_motor(motor_map["FL"], inputJSON["Left"])
-            self.set_motor(motor_map["BL"], inputJSON["Left"])
-            self.set_motor(motor_map["FR"], -inputJSON["Right"])
-            self.set_motor(motor_map["BR"], -inputJSON["Right"])
+    def tank_drive(self, inputJSON):
+        # invert left side
+        self.set_motor(motor_map["FL"], inputJSON["Left"])
+        self.set_motor(motor_map["BL"], inputJSON["Left"])
+        self.set_motor(motor_map["FR"], -inputJSON["Right"])
+        self.set_motor(motor_map["BR"], -inputJSON["Right"])
 
-            if (inputJSON["Firing"]):
-                self.fire_ir()
 
-    def mecanum_drive(self):
-        if len(self.inputQ) > 0:
-            inputJSON = self.inputQ.pop(0)
-            vx = inputJSON["vx"]
-            vy = inputJSON["vy"]
-            rot = inputJSON["rot"]
+    def mecanum_drive(self, inputJSON):
+        vx = inputJSON["vx"]
+        vy = inputJSON["vy"]
+        rot = inputJSON["rot"]
 
-            fl = vy + vx + rot
-            # fr = -vy + vx - rot
-            fr = vy - vx - rot
-            # bl = -vy + vx + rot
-            bl = vy - vx + rot
-            br = vy + vx - rot
-            
-            scale = max(1.0, abs(fl), abs(fr), abs(bl), abs(br))
-            fl /= scale; fr /= scale; bl /= scale; br /= scale # normalize each speed
+        fl = vy + vx + rot
+        fr = vy - vx - rot
+        bl = vy - vx + rot
+        br = vy + vx - rot
+        
+        scale = max(1.0, abs(fl), abs(fr), abs(bl), abs(br))
+        fl /= scale; fr /= scale; bl /= scale; br /= scale # normalize each speed
 
-            # invert a side
-            self.set_motor(motor_map["FL"], fl)
-            self.set_motor(motor_map["BL"], bl)
-            self.set_motor(motor_map["FR"], -fr)
-            self.set_motor(motor_map["BR"], -br)
+        # invert a side
+        self.set_motor(motor_map["FL"], fl)
+        self.set_motor(motor_map["BL"], bl)
+        self.set_motor(motor_map["FR"], -fr)
+        self.set_motor(motor_map["BR"], -br)
 
     # Set PWM Value to Motor
     def set_motor(self, motor, value):  
